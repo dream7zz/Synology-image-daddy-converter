@@ -13,6 +13,7 @@ struct SIALiteApp: App {
             RootView(state: state)
                 .onAppear {
                     NSApp.setActivationPolicy(.regular)
+                    if DemoMode.isOn { state.bootstrapDemo() }
                     if ProcessInfo.processInfo.environment["SIA_AUTOSTART"] == "1" {
                         // Retry until login finished; a fixed delay used to fire
                         // before the client existed and silently do nothing.

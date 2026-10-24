@@ -37,6 +37,10 @@ final class ThumbnailStore: ObservableObject {
     @Published private(set) var generation = 0
     @Published private(set) var failed: Set<Int> = []
 
+    /// Documentation/demo mode: placeholders instead of NAS requests.
+    var demo = false
+    var demoItems: [Int: PhotoItem] = [:]
+
     private var client: ThumbnailClient?
     private var inFlight: Set<Int> = []
     /// Cap simultaneous requests; the NAS dislikes dozens of parallel fetches
@@ -52,6 +56,10 @@ final class ThumbnailStore: ObservableObject {
 
     func load(_ item: PhotoItem, size: ThumbnailClient.Size = .sm) {
         guard images[item.id] == nil, !inFlight.contains(item.id), !failed.contains(item.id) else { return }
+        if demo {
+            if let image = DemoMode.placeholder(for: item) { store(image, for: item.id) }
+            return
+        }
         guard let client else { return }
         inFlight.insert(item.id)
         // The thumbnail endpoint requires cache_key; items scanned without one
@@ -92,6 +100,10 @@ final class ThumbnailStore: ObservableObject {
     /// this deliberately asks without one.
     func refresh(_ item: PhotoItem) {
         invalidate(item.id)
+        if demo {
+            if let image = DemoMode.placeholder(for: item) { store(image, for: item.id) }
+            return
+        }
         guard let client else { return }
         let id = item.id
         // The endpoint answers 200+JSON when cache_key is absent; any value
@@ -120,6 +132,14 @@ final class ThumbnailStore: ObservableObject {
 
     /// Shared client so the inspector warms the same cache as the grid.
     func image(id: Int, cacheKey: String?, size: ThumbnailClient.Size) -> NSImage? {
+        if demo {
+            if let cached = images[id] { return cached }
+            if let item = demoItems[id], let image = DemoMode.placeholder(for: item) {
+                store(image, for: id)
+                return image
+            }
+            return nil
+        }
         guard let client else { return nil }
         gate.wait()
         let data = client.thumbnail(id: id, cacheKey: cacheKey, size: size)
@@ -760,6 +780,28 @@ final class AppState: ObservableObject {
     func progress(for id: Int) -> Double { jobs[id]?.progress ?? 0 }
     func message(for id: Int) -> String { jobs[id]?.message ?? "" }
 
+    /// Loads the synthetic library used for documentation screenshots.
+    func bootstrapDemo() {
+        let snap = DemoMode.snapshot()
+        accounts = [snap.account]
+        selectedAccountID = snap.account.id
+        items = snap.items
+        rootFolders = snap.roots
+        folderEntries = snap.folders
+        scannedRoots = snap.roots
+        selectedPaths = Set(snap.roots.map(\.path))
+        jobs = snap.jobs
+        thumbnailStore.demo = true
+        thumbnailStore.demoItems = Dictionary(uniqueKeysWithValues: snap.items.map { ($0.id, $0) })
+        phase = snap.running ? .running : .idle
+        filter = .all
+        invalidateCounts()
+        statsDirty = true
+        folderTreeDirty = true
+        rebuildFolderTree()
+        banner = "演示模式：数据为本地生成，未连接任何 NAS"
+    }
+
     // MARK: account
 
     func select(_ account: Account) {
@@ -1025,6 +1067,7 @@ final class AppState: ObservableObject {
     }
 
     func scanSelected(roots: [FolderEntry]? = nil, completion: (() -> Void)? = nil) {
+        if DemoMode.isOn { banner = "演示模式：不会连接 NAS"; return }
         guard let account, let nasClient, !isBusy else { return }
         let known = rootFolders + scannedRoots + folderEntries
         // Resolve ids for every ticked path, including deeper ones already seen.
@@ -1240,6 +1283,7 @@ final class AppState: ObservableObject {
 
 
     func start() {
+        if DemoMode.isOn { banner = "演示模式：不会连接 NAS"; return }
         AppState.appendRunLog("start(): account=\(account != nil) client=\(nasClient != nil) busy=\(isBusy) items=\(items.count)")
         guard let account, let nasClient, !isBusy else { return }
         let scopeForRun = scopeItems

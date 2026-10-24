@@ -12,6 +12,12 @@ public struct FolderEntry: Identifiable, Codable {
     public let id: Int
     public let name: String
     public let path: String
+
+    public init(id: Int, name: String, path: String) {
+        self.id = id
+        self.name = name
+        self.path = path
+    }
 }
 
 /// Extensions ImageIO can open. Shared by the scanner (to tell a small photo
@@ -61,6 +67,26 @@ public struct PhotoItem: Codable {
     /// thumbnail endpoint: `ameDefect` items return HTTP 404, so they are work.
     public var hasThumbnails: Bool {
         state == .ready
+    }
+
+    public init(id: Int, filename: String, type: String = "photo", bytes: Int,
+                folderId: Int, folderPath: String, state: PreviewState = .unknown,
+                codec: String? = nil, width: Int? = nil, height: Int? = nil,
+                cacheKey: String? = nil, convertedVariants: Int = 0,
+                sizeStates: [String: String] = [:]) {
+        self.id = id
+        self.filename = filename
+        self.type = type
+        self.bytes = bytes
+        self.folderId = folderId
+        self.folderPath = folderPath
+        self.state = state
+        self.codec = codec
+        self.width = width
+        self.height = height
+        self.cacheKey = cacheKey
+        self.convertedVariants = convertedVariants
+        self.sizeStates = sizeStates
     }
 
     public var readySizeCount: Int {

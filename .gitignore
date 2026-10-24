@@ -11,6 +11,10 @@ dist/
 *.csv
 *.log
 
-# Screenshots taken during development may contain personal photos
+# Screenshots taken during development may contain personal photos.
+# Documentation screenshots live in docs/screenshots/ and are generated from
+# the demo dataset, so they stay tracked.
 docs/*.png
 docs/*.jpg
+!docs/screenshots/
+!docs/screenshots/*.png

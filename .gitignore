@@ -1,0 +1,16 @@
+# Build output
+.build/
+dist/
+*.xcarchive
+.swiftpm/
+
+# macOS
+.DS_Store
+
+# Local runtime data (never commit: contains account ids, file lists, paths)
+*.csv
+*.log
+
+# Screenshots taken during development may contain personal photos
+docs/*.png
+docs/*.jpg

@@ -18,3 +18,10 @@ docs/*.png
 docs/*.jpg
 !docs/screenshots/
 !docs/screenshots/*.png
+
+# internal working notes (contain host/account details)
+DESIGN.md
+PROGRESS.md
+
+# promo video (binary asset, distributed via release, not git)
+ImageDaddy-promo-60s.mp4

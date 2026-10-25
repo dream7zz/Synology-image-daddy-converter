@@ -141,7 +141,7 @@ enum DemoMode {
         }
 
         return Snapshot(
-            account: Account(displayName: "Demo NAS", host: "demo.local:5001",
+            account: Account(displayName: "Home NAS", host: "home.local:5001",
                              username: "demo"),
             roots: rootFolders,
             folders: entries,

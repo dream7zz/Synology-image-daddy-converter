@@ -13,6 +13,10 @@ public final class ThumbnailClient {
     /// Guards `memory`. Many thumbnail loads run concurrently, and an
     /// unguarded dictionary mutation crashed the app inside `_copyOrMoveAndResize`.
     private var memory: [String: Data] = [:]
+    /// Insertion order for a bounded cache. Without a cap, browsing a large
+    /// library pins every JPEG it has ever displayed in RAM.
+    private var insertionOrder: [String] = []
+    private let memoryLimit = 400
     private let lock = NSLock()
 
     public init(client: NASClient, accountID: UUID) {
@@ -30,6 +34,19 @@ public final class ThumbnailClient {
         cacheRoot.appendingPathComponent("\(id)_\(size.rawValue)_\(version).jpg")
     }
 
+    /// Single writer for `memory`; evicts oldest entries past `memoryLimit`.
+    /// Must stay the only place that mutates the cache.
+    private func remember(_ key: String, _ data: Data) {
+        lock.lock()
+        defer { lock.unlock() }
+        if memory[key] == nil { insertionOrder.append(key) }
+        memory[key] = data
+        while insertionOrder.count > memoryLimit {
+            let oldest = insertionOrder.removeFirst()
+            memory.removeValue(forKey: oldest)
+        }
+    }
+
     public func thumbnail(id: Int, cacheKey: String?, size: Size) -> Data? {
         let version = (cacheKey ?? "v").replacingOccurrences(of: "/", with: "_")
         let key = "\(id)-\(size.rawValue)-\(version)"
@@ -40,7 +57,7 @@ public final class ThumbnailClient {
 
         let file = cacheURL(id: id, size: size, version: version)
         if let data = try? Data(contentsOf: file), data.count > 100 {
-            lock.lock(); memory[key] = data; lock.unlock()
+            remember(key, data)
             return data
         }
 
@@ -60,7 +77,7 @@ public final class ThumbnailClient {
         else { return nil }
         let raw = data
 
-        lock.lock(); memory[key] = raw; lock.unlock()
+        remember(key, raw)
         try? raw.write(to: file)
         return raw
     }

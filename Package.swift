@@ -11,5 +11,6 @@ let package = Package(
                           linkerSettings: [.linkedFramework("AVKit"),
                                            .linkedFramework("AVFoundation")]),
         .executableTarget(name: "siatests", dependencies: ["SIACore"]),
+        .executableTarget(name: "siarace", dependencies: ["SIACore"]),
     ]
 )

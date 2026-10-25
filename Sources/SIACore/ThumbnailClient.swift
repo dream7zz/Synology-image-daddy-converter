@@ -47,6 +47,46 @@ public final class ThumbnailClient {
         }
     }
 
+    /// Async load used by the UI. Disk reads/writes happen off the cooperative
+    /// pool and the network call suspends instead of blocking a thread.
+    public func thumbnailAsync(id: Int, cacheKey: String?, size: Size) async -> Data? {
+        let version = (cacheKey ?? "v").replacingOccurrences(of: "/", with: "_")
+        let key = "\(id)-\(size.rawValue)-\(version)"
+
+        lock.lock()
+        if let hit = memory[key] { lock.unlock(); return hit }
+        lock.unlock()
+
+        let file = cacheURL(id: id, size: size, version: version)
+        let disk = await Task.detached(priority: .utility) {
+            try? Data(contentsOf: file)
+        }.value
+        if let disk, disk.count > 100 {
+            remember(key, disk)
+            return disk
+        }
+
+        var params: [String: String] = [
+            "id": String(id),
+            "type": "item",
+            "size": size.rawValue,
+        ]
+        if let cacheKey, !cacheKey.isEmpty { params["cache_key"] = cacheKey }
+        guard let (data, response) = try? await client.rawAsync(api: "SYNO.FotoTeam.Thumbnail",
+                                                                version: "2",
+                                                                method: "get",
+                                                                params: params,
+                                                                rangeHeader: nil),
+              response.statusCode == 200, data.count > 100,
+              data[0] == 0xFF, data[1] == 0xD8      // must be a real JPEG
+        else { return nil }
+        remember(key, data)
+        await Task.detached(priority: .utility) {
+            try? data.write(to: file)
+        }.value
+        return data
+    }
+
     public func thumbnail(id: Int, cacheKey: String?, size: Size) -> Data? {
         let version = (cacheKey ?? "v").replacingOccurrences(of: "/", with: "_")
         let key = "\(id)-\(size.rawValue)-\(version)"

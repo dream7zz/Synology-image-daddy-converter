@@ -90,9 +90,11 @@ public struct EngineOptions: Codable {
     public var concurrency: Int = 6
     public var skipLargerThanBytes: Int = 0
     public var retries: Int = 3
-    /// Off by default. Nothing is ever written to the NAS unless the user turns
-    /// this on AND confirms in the UI.
-    public var autoUpload: Bool = true
+    /// Off by default. Nothing is ever written to the NAS unless the caller
+    /// opts in: the app sets this explicitly for its "generate then upload"
+    /// action, and the CLI requires `--upload`. A `true` default meant a bare
+    /// `siactl run` wrote to the NAS without asking.
+    public var autoUpload: Bool = false
     public init() {}
 }
 

@@ -17,6 +17,31 @@ enum Phase: Equatable {
 
 // MARK: - Thumbnails
 
+/// Bounds concurrency without blocking a thread: awaiting a slot suspends,
+/// whereas DispatchSemaphore.wait() would pin a cooperative-pool thread.
+actor AsyncGate {
+    private var free: Int
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(_ slots: Int) { free = slots }
+
+    func acquire() async {
+        if free > 0 { free -= 1; return }
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            waiters.append(c)
+        }
+    }
+
+    func release() {
+        if let next = waiters.first {
+            waiters.removeFirst()
+            next.resume()
+        } else {
+            free += 1
+        }
+    }
+}
+
 @MainActor
 final class ThumbnailStore: ObservableObject {
     @Published private(set) var images: [Int: NSImage] = [:]
@@ -45,7 +70,7 @@ final class ThumbnailStore: ObservableObject {
     private var inFlight: Set<Int> = []
     /// Cap simultaneous requests; the NAS dislikes dozens of parallel fetches
     /// and it kept the UI from flooding the network during a scan.
-    private let gate = DispatchSemaphore(value: 5)
+    private let gate = AsyncGate(5)
 
     func reset(account: Account, nasClient: NASClient) {
         images = [:]
@@ -66,18 +91,16 @@ final class ThumbnailStore: ObservableObject {
         // still need a value, and any value works.
         let cacheKey = item.cacheKey ?? "s\(item.id)"
         let id = item.id
-        let gate = self.gate
-        Task.detached(priority: .utility) {
-            gate.wait()
-            let data = client.thumbnail(id: id, cacheKey: cacheKey, size: size)
-            gate.signal()
-            await MainActor.run {
-                self.inFlight.remove(id)
-                if let data, let img = NSImage(data: data) {
-                    self.store(img, for: id)
-                } else {
-                    self.failed.insert(id)
-                }
+        Task { [weak self] in
+            guard let self else { return }
+            await self.gate.acquire()
+            let data = await client.thumbnailAsync(id: id, cacheKey: cacheKey, size: size)
+            await self.gate.release()
+            self.inFlight.remove(id)
+            if let data, let img = NSImage(data: data) {
+                self.store(img, for: id)
+            } else {
+                self.failed.insert(id)
             }
         }
     }
@@ -131,7 +154,7 @@ final class ThumbnailStore: ObservableObject {
     }
 
     /// Shared client so the inspector warms the same cache as the grid.
-    func image(id: Int, cacheKey: String?, size: ThumbnailClient.Size) -> NSImage? {
+    func image(id: Int, cacheKey: String?, size: ThumbnailClient.Size) async -> NSImage? {
         if demo {
             if let cached = images[id] { return cached }
             if let item = demoItems[id], let image = DemoMode.placeholder(for: item) {
@@ -141,9 +164,9 @@ final class ThumbnailStore: ObservableObject {
             return nil
         }
         guard let client else { return nil }
-        gate.wait()
-        let data = client.thumbnail(id: id, cacheKey: cacheKey, size: size)
-        gate.signal()
+        await gate.acquire()
+        let data = await client.thumbnailAsync(id: id, cacheKey: cacheKey, size: size)
+        await gate.release()
         guard let data else { return nil }
         return NSImage(data: data)
     }
@@ -153,6 +176,20 @@ final class ThumbnailStore: ObservableObject {
 
 @MainActor
 final class AppState: ObservableObject {
+    /// `Engine.run` blocks on network and file I/O for a whole batch. Running it
+    /// inline in a Task pins a cooperative-pool thread the entire time, so it
+    /// gets a dedicated queue and the caller awaits completion.
+    private static let engineQueue = DispatchQueue(label: "sia.engine", qos: .utility)
+
+    func runEngineOffPool(_ engine: Engine) async {
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            Self.engineQueue.async {
+                engine.run(dryRun: false)
+                c.resume()
+            }
+        }
+    }
+
     enum Filter: String, CaseIterable, Identifiable {
         case missing = "缺失", invalid = "无效", ready = "就绪", failed = "失败", all = "全部"
         var id: String { rawValue }
@@ -1360,7 +1397,7 @@ final class AppState: ObservableObject {
                 }
                 return
             }
-            engine.run(dryRun: false)
+            await self.runEngineOffPool(engine)
             await MainActor.run {
                 self.phase = .finished
                 if let stop = engine.lastStopReason {
@@ -1421,7 +1458,7 @@ final class AppState: ObservableObject {
                 for job in engine.jobs { map[job.id] = job }
                 self.jobs = map
             }
-            engine.run(dryRun: false)
+            await self.runEngineOffPool(engine)
             await MainActor.run {
                 self.phase = .finished
                 if let key = self.account?.id.uuidString {
@@ -1478,7 +1515,7 @@ final class AppState: ObservableObject {
                 for job in engine.jobs { map[job.id] = job }
                 self.jobs = map
             }
-            engine.run(dryRun: false)
+            await self.runEngineOffPool(engine)
             await MainActor.run {
                 self.phase = .finished
                 if let key = self.account?.id.uuidString {

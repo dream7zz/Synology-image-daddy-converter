@@ -984,9 +984,9 @@ struct InspectorView: View {
             let key = item.cacheKey
             let store = thumbs
             Task.detached(priority: .userInitiated) {
-                let a = store.image(id: item.id, cacheKey: key, size: .xl)
-                let b = store.image(id: item.id, cacheKey: key, size: .m)
-                let c = store.image(id: item.id, cacheKey: key, size: .sm)
+                let a = await store.image(id: item.id, cacheKey: key, size: .xl)
+                let b = await store.image(id: item.id, cacheKey: key, size: .m)
+                let c = await store.image(id: item.id, cacheKey: key, size: .sm)
                 await MainActor.run {
                     local.xl = a
                     local.m = b

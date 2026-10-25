@@ -3,6 +3,24 @@
 All notable changes are recorded here, and every release is published at
 <https://github.com/dream7zz/Synology-image-daddy-converter/releases>.
 
+## [0.3.0] — 2026-10-25
+
+### Changed
+- Thumbnail loading now uses a real async network path (`URLSession.data(for:)`)
+  instead of blocking a cooperative-pool thread on a semaphore. Concurrency is
+  bounded by an `AsyncGate` actor, and disk reads/writes run off the pool. This
+  removes the thread-pool starvation that showed up as ~18 blocked threads while
+  scrolling the grid.
+- Batch runs (`Engine.run`) execute on a dedicated queue rather than inline in a
+  `Task`, so a long scan no longer occupies a cooperative thread for its whole
+  duration. `Engine` internals stay synchronous; only the launch site moved.
+
+### Fixed
+- `EngineOptions.autoUpload` defaulted to `true`, contradicting its own
+  documentation and the test that guards it. The app sets it explicitly for its
+  upload action, but a bare `siactl run` would have written to the NAS without
+  `--upload`. Default is now `false`.
+
 ## [0.2.1] — 2026-10-25
 
 ### Fixed

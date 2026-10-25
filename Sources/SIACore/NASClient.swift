@@ -261,6 +261,38 @@ public final class NASClient {
         return try checkSuccess(try decode(data, context: api), context: api)
     }
 
+    /// Async twin of `raw`, for callers that must not pin a thread while the
+    /// NAS responds. Thumbnail loads fire dozens at a time on the cooperative
+    /// pool, where blocking a thread with a semaphore starves the whole pool.
+    public func rawAsync(api: String, version: String = "1", method: String? = nil,
+                         params: [String: String] = [:],
+                         rangeHeader: String? = nil) async throws -> (Data, HTTPURLResponse) {
+        var p = params
+        p["api"] = api
+        p["version"] = version
+        if let method { p["method"] = method }
+        if let token { p["SynoToken"] = token }
+        var comps = URLComponents(url: endpoint(), resolvingAgainstBaseURL: false)!
+        comps.queryItems = p.map { URLQueryItem(name: $0.key, value: $0.value) }
+        var req = URLRequest(url: comps.url!)
+        if let token { req.setValue(token, forHTTPHeaderField: "X-SYNO-TOKEN") }
+        if let rangeHeader { req.setValue(rangeHeader, forHTTPHeaderField: "Range") }
+        stateLock.lock()
+        let cookieHeader = cookies.isEmpty
+            ? nil
+            : cookies.map { "\($0.key)=\($0.value)" }.joined(separator: "; ")
+        stateLock.unlock()
+        if let cookieHeader {
+            req.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+        }
+        let (data, resp) = try await session.data(for: req)
+        guard let http = resp as? HTTPURLResponse else {
+            throw NASError(code: -20, message: "malformed response")
+        }
+        absorbCookies(http)
+        return (data, http)
+    }
+
     /// Multipart POST used by the one write endpoint.
     public func postMultipart(api: String, version: String, method: String,
                               body: MultipartBody) throws -> [String: Any] {

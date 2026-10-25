@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 ROOT="$PWD"
 DIST="$ROOT/dist"
 APP="$DIST/Synology Image Daddy Converter.app"
-VERSION="0.2.1"
+VERSION="0.3.0"
 
 echo "==> building release"
 swift build -c release --product SIAApp
